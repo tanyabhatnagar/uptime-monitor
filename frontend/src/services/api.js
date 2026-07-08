@@ -13,7 +13,7 @@ const apiClient = axios.create({
 
 export const apiService = {
   /**
-   * Fetches all monitored URLs alongside their latest health checks.
+   * Fetches all monitored URLs alongside their latest health checks and 10 recent check statuses.
    */
   async getUrls() {
     const response = await apiClient.get("/urls");
@@ -45,6 +45,15 @@ export const apiService = {
    */
   async getUrlHistory(id) {
     const response = await apiClient.get(`/history/${id}`);
+    return response.data;
+  },
+
+  /**
+   * Triggers an immediate manual health check for a single monitor.
+   * @param {number} id - Target URL database key.
+   */
+  async checkUrlNow(id) {
+    const response = await apiClient.post(`/urls/${id}/check`);
     return response.data;
   },
 };

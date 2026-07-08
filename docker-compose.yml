@@ -38,7 +38,10 @@ services:
 
   # Frontend Service: React Vite on Nginx
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        - VITE_API_URL=http://localhost:8000
     container_name: uptime-frontend
     restart: always
     ports:

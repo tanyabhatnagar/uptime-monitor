@@ -21,9 +21,33 @@ export function AddUrlForm({ onSuccess, onError }) {
     const targetUrl = url.trim();
     const targetName = name.trim() || null;
 
-    // Client-side quick check
+    // 1. Pre-validation checks
     if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
       onError("URL must start with 'http://' or 'https://'");
+      return;
+    }
+
+    // 2. Structural URL validation using built-in URL parser
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(targetUrl);
+    } catch (_) {
+      onError("Invalid URL format. Please enter a valid address (e.g., https://example.com).");
+      return;
+    }
+
+    const hostname = parsedUrl.hostname;
+    if (!hostname) {
+      onError("URL is missing a valid hostname.");
+      return;
+    }
+
+    const isLocalhost = hostname === "localhost";
+    const isIpOrDocker = /^[a-zA-Z0-9_-]+$/.test(hostname) || /^[0-9.:]+$/.test(hostname);
+    
+    // Non-local hostnames must contain a dot for general domain routing validation
+    if (!isLocalhost && !isIpOrDocker && !hostname.includes(".")) {
+      onError("Hostname must contain a dot (e.g. domain.com) or be a local service name.");
       return;
     }
 
@@ -84,7 +108,7 @@ export function AddUrlForm({ onSuccess, onError }) {
           {isSubmitting ? "Registering..." : "Add Monitor"}
         </button>
       </div>
-      <p className="form-helper">Urls must include the protocol (http:// or https://).</p>
+      <p className="form-helper">Urls must include the protocol (http:// or https://) and a valid host name.</p>
     </form>
   );
 }

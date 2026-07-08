@@ -1,14 +1,18 @@
+import logging
 from typing import List, Optional
 from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models, schemas
 
+logger = logging.getLogger("uptime_monitor.crud")
+
 
 async def get_url_by_url(db: AsyncSession, url: str) -> Optional[models.Url]:
     """
     Retrieve a URL record matching the given address.
     """
+    logger.debug(f"Retrieving URL by address: {url}")
     result = await db.execute(select(models.Url).where(models.Url.url == url))
     return result.scalars().first()
 
@@ -17,6 +21,7 @@ async def get_url_by_id(db: AsyncSession, url_id: int) -> Optional[models.Url]:
     """
     Retrieve a URL record by its primary key.
     """
+    logger.debug(f"Retrieving URL by ID: {url_id}")
     result = await db.execute(select(models.Url).where(models.Url.id == url_id))
     return result.scalars().first()
 
@@ -25,6 +30,7 @@ async def create_url(db: AsyncSession, url_in: schemas.UrlCreate) -> models.Url:
     """
     Register a new URL for monitoring.
     """
+    logger.info(f"Creating new URL monitor: {url_in.url} (name: {url_in.name})")
     db_url = models.Url(url=url_in.url, name=url_in.name)
     db.add(db_url)
     await db.commit()
@@ -37,8 +43,10 @@ async def delete_url(db: AsyncSession, url_id: int) -> bool:
     Delete a URL record and cascade delete all checks.
     Returns True if deletion was successful, False if the URL did not exist.
     """
+    logger.info(f"Deleting URL monitor ID: {url_id}")
     db_url = await get_url_by_id(db, url_id)
     if not db_url:
+        logger.warning(f"URL ID {url_id} not found for deletion.")
         return False
     await db.delete(db_url)
     await db.commit()
@@ -48,9 +56,11 @@ async def delete_url(db: AsyncSession, url_id: int) -> bool:
 async def get_urls_with_latest_checks(db: AsyncSession) -> List[schemas.UrlListResponse]:
     """
     Retrieve all URLs annotated with their most recent health check metrics.
-    Uses a subquery with ROW_NUMBER() to optimize search.
+    Also fetches the latest 10 health checks per URL to build UI sparklines.
     """
-    # Subquery to rank health checks for each url_id by checked_at descending
+    logger.debug("Retrieving URLs with latest check and recent history")
+    
+    # 1. Subquery to rank health checks for each url_id by checked_at descending
     subq = (
         select(
             models.HealthCheck.url_id,
@@ -66,7 +76,7 @@ async def get_urls_with_latest_checks(db: AsyncSession) -> List[schemas.UrlListR
         .subquery()
     )
 
-    # Join Urls with the subquery where rank is 1 (the latest check)
+    # 2. Join Urls with the subquery where rank is 1 (the latest check)
     stmt = (
         select(
             models.Url.id,
@@ -86,7 +96,51 @@ async def get_urls_with_latest_checks(db: AsyncSession) -> List[schemas.UrlListR
     result = await db.execute(stmt)
     rows = result.all()
 
-    # Map database row tuples into schemas.UrlListResponse instances
+    # 3. Subquery to fetch the 10 most recent health checks for each URL (for sparklines)
+    recent_subq = (
+        select(
+            models.HealthCheck.url_id,
+            models.HealthCheck.is_up,
+            models.HealthCheck.response_time_ms,
+            models.HealthCheck.status_code,
+            models.HealthCheck.checked_at,
+            func.row_number().over(
+                partition_by=models.HealthCheck.url_id,
+                order_by=models.HealthCheck.checked_at.desc(),
+            ).label("rn"),
+        )
+        .subquery()
+    )
+    
+    recent_stmt = (
+        select(
+            recent_subq.c.url_id,
+            recent_subq.c.is_up,
+            recent_subq.c.response_time_ms,
+            recent_subq.c.status_code,
+            recent_subq.c.checked_at,
+        )
+        .where(recent_subq.c.rn <= 10)
+        .order_by(recent_subq.c.url_id, recent_subq.c.checked_at.asc())  # asc so sparklines render left-to-right chronologically
+    )
+    
+    recent_result = await db.execute(recent_stmt)
+    recent_rows = recent_result.all()
+    
+    recent_by_url = {}
+    for r in recent_rows:
+        if r.url_id not in recent_by_url:
+            recent_by_url[r.url_id] = []
+        recent_by_url[r.url_id].append(
+            schemas.RecentCheckSchema(
+                is_up=r.is_up,
+                response_time_ms=r.response_time_ms,
+                status_code=r.status_code,
+                checked_at=r.checked_at,
+            )
+        )
+
+    # 4. Map database row tuples into schemas.UrlListResponse instances
     return [
         schemas.UrlListResponse(
             id=row.id,
@@ -98,6 +152,7 @@ async def get_urls_with_latest_checks(db: AsyncSession) -> List[schemas.UrlListR
             latest_response_time_ms=row.latest_response_time_ms,
             latest_status_code=row.latest_status_code,
             latest_checked_at=row.latest_checked_at,
+            recent_checks=recent_by_url.get(row.id, []),
         )
         for row in rows
     ]
@@ -109,6 +164,7 @@ async def get_url_history(
     """
     Retrieve historical health check entries for a specific URL, ordered by newest first.
     """
+    logger.debug(f"Retrieving health check history for URL ID {url_id} (limit={limit})")
     result = await db.execute(
         select(models.HealthCheck)
         .where(models.HealthCheck.url_id == url_id)

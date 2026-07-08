@@ -2,6 +2,7 @@ import json
 import logging
 import socket
 import urllib.request
+from typing import Dict, Any, List
 
 # Setup logging configuration first
 logging.basicConfig(
@@ -15,11 +16,13 @@ dns_logger = logging.getLogger("uptime_monitor.dns_patch")
 # Docker DNS-over-HTTPS (DoH) Monkeypatch for Resilient Name Resolution
 # ==============================================================================
 original_getaddrinfo = socket.getaddrinfo
-dns_cache = {}
+dns_cache: Dict[str, str] = {}
 
 
 def is_ip(host: str) -> bool:
-    """Check if the hostname string is already a valid IPv4 or IPv6 address."""
+    """
+    Check if the hostname string is already a valid IPv4 or IPv6 address.
+    """
     try:
         socket.inet_aton(host)
         return True
@@ -33,7 +36,7 @@ def is_ip(host: str) -> bool:
     return False
 
 
-def custom_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+def custom_getaddrinfo(host: Any, port: Any, family: int = 0, type: int = 0, proto: int = 0, flags: int = 0) -> List[Any]:
     """
     Custom hostname resolver. Intercepts DNS queries for external domains and
     resolves them via Google's DNS-over-HTTPS JSON API. Ignores local and
@@ -157,9 +160,22 @@ app.add_middleware(
 app.include_router(router)
 
 
-@app.get("/", summary="Root Health Check Endpoint")
-async def root():
+@app.get("/", summary="Root Health Check Endpoint", tags=["System"])
+async def root() -> Dict[str, str]:
+    """
+    Root status endpoint returning basic API info.
+    """
     return {
         "status": "healthy",
         "service": "Uptime Monitor API",
+    }
+
+
+@app.get("/health", summary="Perform a System Health Check", tags=["System"])
+async def health() -> Dict[str, str]:
+    """
+    Liveness probe endpoint. Returns a 200 OK status to check if container is running.
+    """
+    return {
+        "status": "ok"
     }

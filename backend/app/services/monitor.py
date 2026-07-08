@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from typing import Dict, Any
+from typing import Dict, Any, List
 import httpx
 from sqlalchemy import select
 
@@ -15,8 +15,16 @@ logger.setLevel(logging.INFO)
 
 async def ping_url(client: httpx.AsyncClient, url_id: int, url: str) -> Dict[str, Any]:
     """
-    Asynchronously ping a URL with a GET request, measuring response time.
+    Asynchronously pings a URL with a GET request, measuring response time.
     Catches timeouts, DNS errors, connection errors, and records them as DOWN.
+    
+    Args:
+        client: The HTTPX async client instance to perform the request.
+        url_id: The primary key of the URL in the database.
+        url: The web URL string.
+        
+    Returns:
+        A dictionary containing the check statistics.
     """
     logger.debug(f"Pinging URL ID {url_id}: {url}")
     start_time = time.perf_counter()
@@ -54,15 +62,15 @@ async def ping_url(client: httpx.AsyncClient, url_id: int, url: str) -> Dict[str
 
 async def run_monitoring_job() -> None:
     """
-    Job target executing every 60 seconds.
-    Fetches all active URLs, pings them concurrently, and records results.
+    Job target executing periodically.
+    Fetches all active URLs, pings them concurrently, and records results to the database.
     """
     logger.info("Executing scheduled health check iteration...")
     
     async with async_session_maker() as session:
         # 1. Fetch all active monitored URLs
         result = await session.execute(select(Url).where(Url.is_active == True))
-        active_urls = result.scalars().all()
+        active_urls = list(result.scalars().all())
 
         if not active_urls:
             logger.info("No active URLs to monitor this minute.")

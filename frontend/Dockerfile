@@ -1,6 +1,10 @@
 # Stage 1: Build the React static assets
 FROM node:20-alpine AS build-stage
 
+# Support custom API base URL at build time (Vite embeds env variables during build)
+ARG VITE_API_URL=http://localhost:8000
+ENV VITE_API_URL=$VITE_API_URL
+
 # Set workspace directory
 WORKDIR /app
 
