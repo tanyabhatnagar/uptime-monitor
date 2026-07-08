@@ -1,0 +1,50 @@
+services:
+  # Database Service: PostgreSQL 16
+  db:
+    image: postgres:16-alpine
+    container_name: uptime-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: uptime_monitor
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d uptime_monitor"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Backend Service: FastAPI
+  backend:
+    build: ./backend
+    container_name: uptime-backend
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      # Database connection string connects via compose network DNS 'db'
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/uptime_monitor
+      ENV: development
+    depends_on:
+      db:
+        condition: service_healthy
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+
+  # Frontend Service: React Vite on Nginx
+  frontend:
+    build: ./frontend
+    container_name: uptime-frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
