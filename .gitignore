@@ -1,0 +1,27 @@
+# Environment secrets
+.env
+backend/.env
+
+# Python build and cache artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+
+# Node modules and frontend builds
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# System files
+.DS_Store
+Thumbs.db
